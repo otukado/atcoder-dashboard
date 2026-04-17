@@ -61,7 +61,7 @@ function compareBucketsAsc(a: string, b: string): number {
 
 function difficultyColorByBucket(bucket: string): string {
   const start = bucketStart(bucket);
-  if (start === null) return "#6b7280";
+  if (start === null) return "#000000";
   if (start < 400) return "#6b7280";
   if (start < 800) return "#8b5a2b";
   if (start < 1200) return "#16a34a";
@@ -75,8 +75,79 @@ function difficultyColorByBucket(bucket: string): string {
 type ExplorePageProps = {
   searchParams?: Promise<{
     user?: string;
+    range?: string;
+    start?: string;
+    end?: string;
+    dailyView?: string;
+    weeklyView?: string;
   }>;
 };
+
+function problemLetter(problemId: string): string {
+  const m = problemId.match(/_([a-z])$/i);
+  if (!m) return "Others";
+  return m[1].toUpperCase();
+}
+
+function letterColor(label: string): string {
+  const colorMap: Record<string, string> = {
+    A: "#22c55e",
+    B: "#06b6d4",
+    C: "#3b82f6",
+    D: "#8b5cf6",
+    E: "#ec4899",
+    F: "#f97316",
+    G: "#ef4444",
+    H: "#a855f7",
+    Others: "#6b7280",
+  };
+
+  return colorMap[label] ?? "#6b7280";
+}
+
+function toDayKey(epochSecond: number): string {
+  return new Date(epochSecond * 1000).toISOString().slice(0, 10);
+}
+
+function dayStartEpoch(dateText: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+    return null;
+  }
+  const date = new Date(`${dateText}T00:00:00+09:00`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return Math.floor(date.getTime() / 1000);
+}
+
+function dayEndEpoch(dateText: string): number | null {
+  const start = dayStartEpoch(dateText);
+  if (start === null) return null;
+  return start + 86400 - 1;
+}
+
+function formatDate(epochSecond: number): string {
+  return new Date(epochSecond * 1000).toISOString().slice(0, 10);
+}
+
+function getTodayJstStartEpoch(): number {
+  const todayText = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  return dayStartEpoch(todayText) ?? Math.floor(Date.now() / 1000);
+}
+
+function weekKeyJst(epochSecond: number): string {
+  const d = new Date((epochSecond + 9 * 3600) * 1000);
+  const day = d.getUTCDay();
+  const mondayOffset = (day + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - mondayOffset);
+  return d.toISOString().slice(0, 10);
+}
 
 async function fetchAtCoderAcSubmissions(atcoderUserId: string): Promise<AtCoderSubmission[]> {
   const submissions: AtCoderSubmission[] = [];
@@ -150,6 +221,28 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
 
   const params = (await searchParams) ?? {};
   const selectedAtcoderUserId = (params.user ?? "").trim();
+  const selectedRange = params.range ?? "30";
+  const dailyView: "difficulty" | "letter" = params.dailyView === "letter" ? "letter" : "difficulty";
+  const weeklyView: "difficulty" | "letter" = params.weeklyView === "letter" ? "letter" : "difficulty";
+
+  const todayStartEpoch = getTodayJstStartEpoch();
+  const todayEndEpoch = todayStartEpoch + 86400 - 1;
+
+  let startEpoch: number | undefined;
+  let endEpoch: number | undefined;
+
+  if (selectedRange === "7" || selectedRange === "30" || selectedRange === "90") {
+    const days = Number(selectedRange);
+    startEpoch = todayStartEpoch - (days - 1) * 86400;
+    endEpoch = todayEndEpoch;
+  } else if (selectedRange === "custom") {
+    const s = params.start ? dayStartEpoch(params.start) : null;
+    const e = params.end ? dayEndEpoch(params.end) : null;
+    if (s !== null && e !== null && s <= e) {
+      startEpoch = s;
+      endEpoch = e;
+    }
+  }
 
   let fetchError: string | null = null;
   let acSubmissions: AtCoderSubmission[] = [];
@@ -166,12 +259,50 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     }
   }
 
+  const filteredSubmissions = acSubmissions.filter((s) => {
+    if (startEpoch !== undefined && s.epoch_second < startEpoch) return false;
+    if (endEpoch !== undefined && s.epoch_second > endEpoch) return false;
+    return true;
+  });
+
   const diffMap = new Map<string, number>();
-  for (const s of acSubmissions) {
+  const dailyMap = new Map<string, number>();
+  const weeklyMap = new Map<string, number>();
+  const dailyDifficultyMap = new Map<string, Map<string, number>>();
+  const dailyLetterMap = new Map<string, Map<string, number>>();
+  const weeklyDifficultyMap = new Map<string, Map<string, number>>();
+  const weeklyLetterMap = new Map<string, Map<string, number>>();
+
+  const letterOrder = ["A", "B", "C", "D", "E", "F", "G", "H", "Others"];
+
+  for (const s of filteredSubmissions) {
     const difficulty = problemModels[s.problem_id]?.difficulty;
     const normalizedDifficulty = typeof difficulty === "number" ? Math.max(0, Math.round(difficulty)) : null;
     const bucket = difficultyBucket(normalizedDifficulty);
     diffMap.set(bucket, (diffMap.get(bucket) ?? 0) + 1);
+
+    const day = toDayKey(s.epoch_second);
+    dailyMap.set(day, (dailyMap.get(day) ?? 0) + 1);
+
+    const dailyBucketCounts = dailyDifficultyMap.get(day) ?? new Map<string, number>();
+    dailyBucketCounts.set(bucket, (dailyBucketCounts.get(bucket) ?? 0) + 1);
+    dailyDifficultyMap.set(day, dailyBucketCounts);
+
+    const letter = problemLetter(s.problem_id);
+    const dailyLetterCounts = dailyLetterMap.get(day) ?? new Map<string, number>();
+    dailyLetterCounts.set(letter, (dailyLetterCounts.get(letter) ?? 0) + 1);
+    dailyLetterMap.set(day, dailyLetterCounts);
+
+    const week = weekKeyJst(s.epoch_second);
+    weeklyMap.set(week, (weeklyMap.get(week) ?? 0) + 1);
+
+    const weeklyBucketCounts = weeklyDifficultyMap.get(week) ?? new Map<string, number>();
+    weeklyBucketCounts.set(bucket, (weeklyBucketCounts.get(bucket) ?? 0) + 1);
+    weeklyDifficultyMap.set(week, weeklyBucketCounts);
+
+    const weeklyLetterCounts = weeklyLetterMap.get(week) ?? new Map<string, number>();
+    weeklyLetterCounts.set(letter, (weeklyLetterCounts.get(letter) ?? 0) + 1);
+    weeklyLetterMap.set(week, weeklyLetterCounts);
   }
 
   const ownProfile = currentUserId
@@ -219,10 +350,99 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     .sort((a, b) => compareBucketsAsc(a.bucket, b.bucket));
   const maxDifficulty = Math.max(1, ...difficultyRows.map((r) => r.count));
 
+  const dailyRows = [...dailyMap.entries()]
+    .map(([date, count]) => {
+      const bucketCounts = dailyDifficultyMap.get(date) ?? new Map<string, number>();
+      const letterCounts = dailyLetterMap.get(date) ?? new Map<string, number>();
+      const segments =
+        dailyView === "difficulty"
+          ? [...bucketCounts.entries()]
+              .map(([bucket, bucketCount]) => ({
+                label: bucket,
+                count: bucketCount,
+                color: difficultyColorByBucket(bucket),
+              }))
+              .sort((a, b) => compareBucketsAsc(a.label, b.label))
+          : letterOrder
+              .filter((label) => (letterCounts.get(label) ?? 0) > 0)
+              .map((label) => ({
+                label,
+                count: letterCounts.get(label) ?? 0,
+                color: letterColor(label),
+              }));
+
+      return { date, count, segments };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const maxDaily = Math.max(1, ...dailyRows.map((r) => r.count));
+
+  const weeklyRows = [...weeklyMap.entries()]
+    .map(([weekStart, count]) => {
+      const bucketCounts = weeklyDifficultyMap.get(weekStart) ?? new Map<string, number>();
+      const letterCounts = weeklyLetterMap.get(weekStart) ?? new Map<string, number>();
+      const segments =
+        weeklyView === "difficulty"
+          ? [...bucketCounts.entries()]
+              .map(([bucket, bucketCount]) => ({
+                label: bucket,
+                count: bucketCount,
+                color: difficultyColorByBucket(bucket),
+              }))
+              .sort((a, b) => compareBucketsAsc(a.label, b.label))
+          : letterOrder
+              .filter((label) => (letterCounts.get(label) ?? 0) > 0)
+              .map((label) => ({
+                label,
+                count: letterCounts.get(label) ?? 0,
+                color: letterColor(label),
+              }));
+
+      return { weekStart, count, segments };
+    })
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const maxWeekly = Math.max(1, ...weeklyRows.map((r) => r.count));
+
   const durationRows = [...durationByBucket.entries()]
     .map(([bucket, v]) => ({ bucket, avgMin: v.count > 0 ? v.sum / v.count : 0 }))
     .sort((a, b) => compareBucketsAsc(a.bucket, b.bucket));
   const maxDuration = Math.max(1, ...durationRows.map((r) => r.avgMin));
+
+  const rangeLabel =
+    startEpoch !== undefined && endEpoch !== undefined
+      ? `${formatDate(startEpoch)} 〜 ${formatDate(endEpoch)}`
+      : "全期間";
+  const customStartDefault = params.start ?? "";
+  const customEndDefault = params.end ?? "";
+
+  const dailyLegendLabels =
+    dailyView === "difficulty"
+      ? [...new Set(dailyRows.flatMap((row) => row.segments.map((segment) => segment.label)))].sort(compareBucketsAsc)
+      : letterOrder.filter((label) => dailyRows.some((row) => row.segments.some((segment) => segment.label === label)));
+
+  const weeklyLegendLabels =
+    weeklyView === "difficulty"
+      ? [...new Set(weeklyRows.flatMap((row) => row.segments.map((segment) => segment.label)))].sort(compareBucketsAsc)
+      : letterOrder.filter((label) => weeklyRows.some((row) => row.segments.some((segment) => segment.label === label)));
+
+  const buildExploreHref = (overrides: Record<string, string | undefined>) => {
+    const search = new URLSearchParams();
+    if (selectedAtcoderUserId) search.set("user", selectedAtcoderUserId);
+    search.set("range", selectedRange);
+    if (params.start) search.set("start", params.start);
+    if (params.end) search.set("end", params.end);
+    search.set("dailyView", dailyView);
+    search.set("weeklyView", weeklyView);
+
+    for (const [key, value] of Object.entries(overrides)) {
+      if (!value) {
+        search.delete(key);
+      } else {
+        search.set(key, value);
+      }
+    }
+
+    return `/explore?${search.toString()}`;
+  };
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-5xl px-6 py-10">
@@ -266,6 +486,219 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
           他ユーザーの difficulty データは、ページ表示ごとに AtCoder API から最新取得します。
         </p>
         {fetchError ? <p className="mt-2 text-sm text-red-600 dark:text-red-400">{fetchError}</p> : null}
+      </section>
+
+      <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-3 text-lg font-semibold">期間フィルタ</h2>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <Link
+            href={buildExploreHref({ range: "7" })}
+            className={`rounded-md px-3 py-1 text-sm ${
+              selectedRange === "7"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            7日
+          </Link>
+          <Link
+            href={buildExploreHref({ range: "30" })}
+            className={`rounded-md px-3 py-1 text-sm ${
+              selectedRange === "30"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            30日
+          </Link>
+          <Link
+            href={buildExploreHref({ range: "90" })}
+            className={`rounded-md px-3 py-1 text-sm ${
+              selectedRange === "90"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            90日
+          </Link>
+          <Link
+            href={buildExploreHref({ range: "all", start: undefined, end: undefined })}
+            className={`rounded-md px-3 py-1 text-sm ${
+              selectedRange === "all"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            全期間
+          </Link>
+        </div>
+
+        <form action="/explore" method="get" className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="range" value="custom" />
+          {selectedAtcoderUserId ? <input type="hidden" name="user" value={selectedAtcoderUserId} /> : null}
+          <label className="text-sm">
+            <span className="mb-1 block">開始日</span>
+            <input
+              type="date"
+              name="start"
+              defaultValue={customStartDefault}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block">終了日</span>
+            <input
+              type="date"
+              name="end"
+              defaultValue={customEndDefault}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            カスタム適用
+          </button>
+        </form>
+
+        <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">現在の表示範囲: {rangeLabel}</p>
+      </section>
+
+      <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-3 text-lg font-semibold">日別の解いた問題数</h2>
+        <div className="mb-3 flex flex-wrap gap-2 text-sm">
+          <Link
+            href={buildExploreHref({ dailyView: "difficulty" })}
+            className={`rounded-md px-3 py-1 ${
+              dailyView === "difficulty"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            difficulty
+          </Link>
+          <Link
+            href={buildExploreHref({ dailyView: "letter" })}
+            className={`rounded-md px-3 py-1 ${
+              dailyView === "letter"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            問題番号（A/B...）
+          </Link>
+        </div>
+        {selectedAtcoderUserId.length === 0 ? (
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーを選択してください。</p>
+        ) : fetchError ? (
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーの取得に失敗しました。</p>
+        ) : dailyRows.length === 0 ? (
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">日別データがありません。</p>
+        ) : (
+          <div className="space-y-2">
+            {dailyRows.slice(-30).map((row) => (
+              <div key={row.date} className="grid grid-cols-[96px_1fr_40px] items-center gap-3 text-sm">
+                <span>{row.date.slice(5)}</span>
+                <div className="h-3 rounded bg-zinc-100 dark:bg-zinc-800">
+                  <div className="flex h-3 overflow-hidden rounded" style={{ width: `${(row.count / maxDaily) * 100}%` }}>
+                    {row.segments.map((segment) => (
+                      <div
+                        key={`${row.date}-${segment.label}`}
+                        style={{
+                          width: `${(segment.count / row.count) * 100}%`,
+                          backgroundColor: segment.color,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <span className="text-right">{row.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-300">
+          {dailyLegendLabels.map((label) => (
+            <span key={label} className="inline-flex items-center gap-1">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{
+                  backgroundColor: dailyView === "difficulty" ? difficultyColorByBucket(label) : letterColor(label),
+                }}
+              />
+              {label}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-3 text-lg font-semibold">週ごとの解いた問題数</h2>
+        <div className="mb-3 flex flex-wrap gap-2 text-sm">
+          <Link
+            href={buildExploreHref({ weeklyView: "difficulty" })}
+            className={`rounded-md px-3 py-1 ${
+              weeklyView === "difficulty"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            difficulty
+          </Link>
+          <Link
+            href={buildExploreHref({ weeklyView: "letter" })}
+            className={`rounded-md px-3 py-1 ${
+              weeklyView === "letter"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            }`}
+          >
+            問題番号（A/B...）
+          </Link>
+        </div>
+        {selectedAtcoderUserId.length === 0 ? (
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーを選択してください。</p>
+        ) : fetchError ? (
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーの取得に失敗しました。</p>
+        ) : weeklyRows.length === 0 ? (
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">週次データがありません。</p>
+        ) : (
+          <div className="space-y-2">
+            {weeklyRows.map((row) => (
+              <div key={row.weekStart} className="grid grid-cols-[120px_1fr_40px] items-center gap-3 text-sm">
+                <span>{row.weekStart}</span>
+                <div className="h-3 rounded bg-zinc-100 dark:bg-zinc-800">
+                  <div className="flex h-3 overflow-hidden rounded" style={{ width: `${(row.count / maxWeekly) * 100}%` }}>
+                    {row.segments.map((segment) => (
+                      <div
+                        key={`${row.weekStart}-${segment.label}`}
+                        style={{
+                          width: `${(segment.count / row.count) * 100}%`,
+                          backgroundColor: segment.color,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <span className="text-right">{row.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-300">
+          {weeklyLegendLabels.map((label) => (
+            <span key={label} className="inline-flex items-center gap-1">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{
+                  backgroundColor: weeklyView === "difficulty" ? difficultyColorByBucket(label) : letterColor(label),
+                }}
+              />
+              {label}
+            </span>
+          ))}
+        </div>
       </section>
 
       <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
