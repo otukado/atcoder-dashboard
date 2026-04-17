@@ -6,19 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "postinstall": "prisma generate",
-    "db:deploy": "prisma migrate deploy"
+    "lint": "eslint"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
-    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/adapter-better-sqlite3": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "better-sqlite3": "^12.9.0",
     "next": "16.2.4",
-    "next-auth": "^4.24.14",
-    "pg": "^8.16.3",
-    "pg-mem": "^3.0.5",
-    "prisma": "^7.7.0",
+    "next-auth": "^4.24.7",
+    "prisma": "^6.19.3",
     "react": "19.2.5",
     "react-dom": "19.2.5"
   },
@@ -31,5 +28,13 @@
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "@prisma/engines",
+      "prisma",
+      "sharp"
+    ]
   }
 }

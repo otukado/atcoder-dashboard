@@ -1,0 +1,6 @@
+allowBuilds:
+  '0': '@prisma/engines'
+  '1': better-sqlite3
+  '2': prisma
+  '3': sharp
+  '4': unrs-resolver

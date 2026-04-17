@@ -37,7 +37,7 @@ function compareBucketsAsc(a: string, b: string): number {
 
 function difficultyColorByBucket(bucket: string): string {
   const start = bucketStart(bucket);
-  if (start === null) return "#6b7280";
+  if (start === null) return "#000000";
   if (start < 400) return "#6b7280"; // gray
   if (start < 800) return "#8b5a2b"; // brown
   if (start < 1200) return "#16a34a"; // green
