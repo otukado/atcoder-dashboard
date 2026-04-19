@@ -17,13 +17,14 @@ AtCoder の精進状況を可視化するダッシュボードです。
 
 ### 1. 環境変数
 
-`.env.example` をコピーして `.env` を作成し、GitHub OAuth を設定します。
+`.env.example` をコピーして `.env` を作成し、GitHub OAuth と Neon の接続文字列を設定します。
 
 ```bash
 cp .env.example .env
 ```
 
 必須:
+- `DATABASE_URL`（Neon の PostgreSQL 接続文字列）
 - `NEXTAUTH_SECRET`
 - `GITHUB_ID`
 - `GITHUB_SECRET`
@@ -51,6 +52,8 @@ bun dev
 ```bash
 npx prisma migrate dev
 ```
+
+Neon を使う場合は、`DATABASE_URL` を Neon の Postgres 接続文字列にしてください。
 
 ### 3. 使い方
 1. `/login` でログイン

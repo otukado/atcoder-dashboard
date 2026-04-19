@@ -1,5 +1,6 @@
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -8,9 +9,13 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    adapter: new PrismaBetterSqlite3({
-      url: process.env.DATABASE_URL ?? "file:./dev.db",
-    }),
+    adapter: new PrismaPg(
+      new Pool({
+        connectionString:
+          process.env.DATABASE_URL ??
+          "postgresql://postgres:postgres@localhost:5432/atcoder_dashboard?schema=public",
+      }),
+    ),
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
 
