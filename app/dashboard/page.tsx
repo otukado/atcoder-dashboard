@@ -2,9 +2,10 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
-import { updateAtCoderUserId } from "@/app/settings/actions";
+import { AtCoderUserIdForm } from "@/components/atcoder-user-id-form";
 import { LastSyncCacheNotice } from "@/components/last-sync-cache-notice";
 import { SyncAtCoderButton } from "@/components/sync-atcoder-button";
+import { TabbedCountCharts } from "@/components/tabbed-count-charts";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -180,30 +181,31 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }
   }
 
-  const profile = await prisma.userProfile.findUnique({
-    where: { userId: session.user.id },
-  });
-
-  const submissions = await db.submission.findMany({
-    where: {
-      userId: session.user.id,
-      result: "AC",
-      ...(startEpoch !== undefined || endEpoch !== undefined
-        ? {
-            epochSecond: {
-              ...(startEpoch !== undefined ? { gte: startEpoch } : {}),
-              ...(endEpoch !== undefined ? { lte: endEpoch } : {}),
-            },
-          }
-        : {}),
-    },
-    include: {
-      problem: true,
-    },
-    orderBy: {
-      epochSecond: "asc",
-    },
-  });
+  const [profile, submissions] = await Promise.all([
+    prisma.userProfile.findUnique({
+      where: { userId: session.user.id },
+    }),
+    db.submission.findMany({
+      where: {
+        userId: session.user.id,
+        result: "AC",
+        ...(startEpoch !== undefined || endEpoch !== undefined
+          ? {
+              epochSecond: {
+                ...(startEpoch !== undefined ? { gte: startEpoch } : {}),
+                ...(endEpoch !== undefined ? { lte: endEpoch } : {}),
+              },
+            }
+          : {}),
+      },
+      include: {
+        problem: true,
+      },
+      orderBy: {
+        epochSecond: "asc",
+      },
+    }),
+  ]);
 
   const dailyTargetSubmissions =
     dailyCategoryFilter === "all"
@@ -258,23 +260,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .map(([date, count]) => {
       const bucketCounts = dailyDifficultyMap.get(date) ?? new Map<string, number>();
       const letterCounts = dailyLetterMap.get(date) ?? new Map<string, number>();
-      const segments =
-        dailyView === "difficulty"
-          ? [...bucketCounts.entries()]
-              .map(([bucket, bucketCount]) => ({
-                label: bucket,
-                count: bucketCount,
-                color: difficultyColorByBucket(bucket),
-              }))
-              .sort((a, b) => compareBucketsAsc(a.label, b.label))
-          : letterOrder
-              .filter((label) => (letterCounts.get(label) ?? 0) > 0)
-              .map((label) => ({
-                label,
-                count: letterCounts.get(label) ?? 0,
-                color: letterColor(label),
-              }));
-      return { date, count, segments };
+      const difficultySegments = [...bucketCounts.entries()]
+        .map(([bucket, bucketCount]) => ({
+          label: bucket,
+          count: bucketCount,
+          color: difficultyColorByBucket(bucket),
+        }))
+        .sort((a, b) => compareBucketsAsc(a.label, b.label));
+      const letterSegments = letterOrder
+        .filter((label) => (letterCounts.get(label) ?? 0) > 0)
+        .map((label) => ({
+          label,
+          count: letterCounts.get(label) ?? 0,
+          color: letterColor(label),
+        }));
+
+      return { date, count, difficultySegments, letterSegments };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -286,24 +287,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .map(([weekStart, count]) => {
       const bucketCounts = weeklyDifficultyMap.get(weekStart) ?? new Map<string, number>();
       const letterCounts = weeklyLetterMap.get(weekStart) ?? new Map<string, number>();
-      const segments =
-        weeklyView === "difficulty"
-          ? [...bucketCounts.entries()]
-              .map(([bucket, bucketCount]) => ({
-                label: bucket,
-                count: bucketCount,
-                color: difficultyColorByBucket(bucket),
-              }))
-              .sort((a, b) => compareBucketsAsc(a.label, b.label))
-          : letterOrder
-              .filter((label) => (letterCounts.get(label) ?? 0) > 0)
-              .map((label) => ({
-                label,
-                count: letterCounts.get(label) ?? 0,
-                color: letterColor(label),
-              }));
+      const difficultySegments = [...bucketCounts.entries()]
+        .map(([bucket, bucketCount]) => ({
+          label: bucket,
+          count: bucketCount,
+          color: difficultyColorByBucket(bucket),
+        }))
+        .sort((a, b) => compareBucketsAsc(a.label, b.label));
+      const letterSegments = letterOrder
+        .filter((label) => (letterCounts.get(label) ?? 0) > 0)
+        .map((label) => ({
+          label,
+          count: letterCounts.get(label) ?? 0,
+          color: letterColor(label),
+        }));
 
-      return { weekStart, count, segments };
+      return { weekStart, count, difficultySegments, letterSegments };
     })
     .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
@@ -400,9 +399,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           })
           .join(", ")})`;
 
-  const maxDaily = Math.max(1, ...dailyRows.map((r) => r.count));
   const maxDifficulty = Math.max(1, ...difficultyRows.map((r) => r.count));
-  const maxWeekly = Math.max(1, ...weeklyRows.map((r) => r.count));
   const maxLetter = Math.max(1, ...letterRows.map((r) => r.count));
 
   const totalDurationMin = submissions.reduce<number>(
@@ -425,16 +422,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const lastSyncedText = profile?.lastSyncedAt
     ? new Date(profile.lastSyncedAt).toLocaleString("ja-JP")
     : "未同期";
-
-  const dailyLegendLabels =
-    dailyView === "difficulty"
-      ? [...new Set(dailyRows.flatMap((row) => row.segments.map((segment) => segment.label)))].sort(compareBucketsAsc)
-      : letterOrder.filter((label) => dailyRows.some((row) => row.segments.some((segment) => segment.label === label)));
-
-  const weeklyLegendLabels =
-    weeklyView === "difficulty"
-      ? [...new Set(weeklyRows.flatMap((row) => row.segments.map((segment) => segment.label)))].sort(compareBucketsAsc)
-      : letterOrder.filter((label) => weeklyRows.some((row) => row.segments.some((segment) => segment.label === label)));
 
   const buildDashboardHref = (overrides: Record<string, string | undefined>) => {
     const search = new URLSearchParams();
@@ -579,24 +566,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </p>
         )}
 
-        <form action={updateAtCoderUserId} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="flex w-full flex-col gap-1 text-sm">
-            <span>AtCoder User ID</span>
-            <input
-              type="text"
-              name="atcoderUserId"
-              defaultValue={profile?.atcoderUserId ?? ""}
-              placeholder="例: tourist"
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
-          <button
-            type="submit"
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            保存
-          </button>
-        </form>
+        <AtCoderUserIdForm currentAtCoderUserId={profile?.atcoderUserId} />
 
         <SyncAtCoderButton />
         <LastSyncCacheNotice />
@@ -619,8 +589,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </section>
 
       <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 text-lg font-semibold">日別の解いた問題数</h2>
-        <div className="mb-3 flex flex-wrap gap-2 text-sm">
+        <h2 className="mb-3 text-lg font-semibold">日別の解いた問題数（分類フィルタ）</h2>
+        <div className="mb-1 flex flex-wrap gap-2 text-sm">
           <Link
             href={buildDashboardHref({ dailyCategory: "all" })}
             className={`rounded-md px-3 py-1 ${
@@ -662,131 +632,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             解説あり
           </Link>
         </div>
-        <div className="mb-3 flex flex-wrap gap-2 text-sm">
-          <Link
-            href={buildDashboardHref({ dailyView: "difficulty" })}
-            className={`rounded-md px-3 py-1 ${
-              dailyView === "difficulty"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            difficulty
-          </Link>
-          <Link
-            href={buildDashboardHref({ dailyView: "letter" })}
-            className={`rounded-md px-3 py-1 ${
-              dailyView === "letter"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            問題番号（A/B...）
-          </Link>
-        </div>
-        {dailyRows.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">まだデータがありません。同期を実行してください。</p>
-        ) : (
-          <div className="space-y-2">
-            {dailyRows.slice(-30).map((row) => (
-              <div key={row.date} className="grid grid-cols-[96px_1fr_40px] items-center gap-3 text-sm">
-                <span>{row.date.slice(5)}</span>
-                <div className="h-3 rounded bg-zinc-100 dark:bg-zinc-800">
-                  <div className="flex h-3 overflow-hidden rounded" style={{ width: `${(row.count / maxDaily) * 100}%` }}>
-                    {row.segments.map((segment) => (
-                      <div
-                        key={`${row.date}-${segment.label}`}
-                        style={{
-                          width: `${(segment.count / row.count) * 100}%`,
-                          backgroundColor: segment.color,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <span className="text-right">{row.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-300">
-          {dailyLegendLabels.map((label) => (
-            <span key={label} className="inline-flex items-center gap-1">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{
-                  backgroundColor: dailyView === "difficulty" ? difficultyColorByBucket(label) : letterColor(label),
-                }}
-              />
-              {label}
-            </span>
-          ))}
-        </div>
       </section>
 
-      <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 text-lg font-semibold">週ごとの解いた問題数</h2>
-        <div className="mb-3 flex flex-wrap gap-2 text-sm">
-          <Link
-            href={buildDashboardHref({ weeklyView: "difficulty" })}
-            className={`rounded-md px-3 py-1 ${
-              weeklyView === "difficulty"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            difficulty
-          </Link>
-          <Link
-            href={buildDashboardHref({ weeklyView: "letter" })}
-            className={`rounded-md px-3 py-1 ${
-              weeklyView === "letter"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            問題番号（A/B...）
-          </Link>
-        </div>
-        {weeklyRows.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">週次データがありません。</p>
-        ) : (
-          <div className="space-y-2">
-            {weeklyRows.map((row) => (
-              <div key={row.weekStart} className="grid grid-cols-[120px_1fr_40px] items-center gap-3 text-sm">
-                <span>{row.weekStart}</span>
-                <div className="h-3 rounded bg-zinc-100 dark:bg-zinc-800">
-                  <div className="flex h-3 overflow-hidden rounded" style={{ width: `${(row.count / maxWeekly) * 100}%` }}>
-                    {row.segments.map((segment) => (
-                      <div
-                        key={`${row.weekStart}-${segment.label}`}
-                        style={{
-                          width: `${(segment.count / row.count) * 100}%`,
-                          backgroundColor: segment.color,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <span className="text-right">{row.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-300">
-          {weeklyLegendLabels.map((label) => (
-            <span key={label} className="inline-flex items-center gap-1">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{
-                  backgroundColor: weeklyView === "difficulty" ? difficultyColorByBucket(label) : letterColor(label),
-                }}
-              />
-              {label}
-            </span>
-          ))}
-        </div>
-      </section>
+      <TabbedCountCharts
+        dailyRows={dailyRows}
+        weeklyRows={weeklyRows}
+        initialDailyView={dailyView}
+        initialWeeklyView={weeklyView}
+        dailyEmptyMessage="まだデータがありません。同期を実行してください。"
+        weeklyEmptyMessage="週次データがありません。"
+      />
 
       <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="mb-3 text-lg font-semibold">A/B問題などの分類グラフ</h2>

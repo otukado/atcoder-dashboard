@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 
+import { TabbedCountCharts } from "@/components/tabbed-count-charts";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -354,53 +355,47 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     .map(([date, count]) => {
       const bucketCounts = dailyDifficultyMap.get(date) ?? new Map<string, number>();
       const letterCounts = dailyLetterMap.get(date) ?? new Map<string, number>();
-      const segments =
-        dailyView === "difficulty"
-          ? [...bucketCounts.entries()]
-              .map(([bucket, bucketCount]) => ({
-                label: bucket,
-                count: bucketCount,
-                color: difficultyColorByBucket(bucket),
-              }))
-              .sort((a, b) => compareBucketsAsc(a.label, b.label))
-          : letterOrder
-              .filter((label) => (letterCounts.get(label) ?? 0) > 0)
-              .map((label) => ({
-                label,
-                count: letterCounts.get(label) ?? 0,
-                color: letterColor(label),
-              }));
+      const difficultySegments = [...bucketCounts.entries()]
+        .map(([bucket, bucketCount]) => ({
+          label: bucket,
+          count: bucketCount,
+          color: difficultyColorByBucket(bucket),
+        }))
+        .sort((a, b) => compareBucketsAsc(a.label, b.label));
+      const letterSegments = letterOrder
+        .filter((label) => (letterCounts.get(label) ?? 0) > 0)
+        .map((label) => ({
+          label,
+          count: letterCounts.get(label) ?? 0,
+          color: letterColor(label),
+        }));
 
-      return { date, count, segments };
+      return { date, count, difficultySegments, letterSegments };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
-  const maxDaily = Math.max(1, ...dailyRows.map((r) => r.count));
 
   const weeklyRows = [...weeklyMap.entries()]
     .map(([weekStart, count]) => {
       const bucketCounts = weeklyDifficultyMap.get(weekStart) ?? new Map<string, number>();
       const letterCounts = weeklyLetterMap.get(weekStart) ?? new Map<string, number>();
-      const segments =
-        weeklyView === "difficulty"
-          ? [...bucketCounts.entries()]
-              .map(([bucket, bucketCount]) => ({
-                label: bucket,
-                count: bucketCount,
-                color: difficultyColorByBucket(bucket),
-              }))
-              .sort((a, b) => compareBucketsAsc(a.label, b.label))
-          : letterOrder
-              .filter((label) => (letterCounts.get(label) ?? 0) > 0)
-              .map((label) => ({
-                label,
-                count: letterCounts.get(label) ?? 0,
-                color: letterColor(label),
-              }));
+      const difficultySegments = [...bucketCounts.entries()]
+        .map(([bucket, bucketCount]) => ({
+          label: bucket,
+          count: bucketCount,
+          color: difficultyColorByBucket(bucket),
+        }))
+        .sort((a, b) => compareBucketsAsc(a.label, b.label));
+      const letterSegments = letterOrder
+        .filter((label) => (letterCounts.get(label) ?? 0) > 0)
+        .map((label) => ({
+          label,
+          count: letterCounts.get(label) ?? 0,
+          color: letterColor(label),
+        }));
 
-      return { weekStart, count, segments };
+      return { weekStart, count, difficultySegments, letterSegments };
     })
     .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-  const maxWeekly = Math.max(1, ...weeklyRows.map((r) => r.count));
 
   const durationRows = [...durationByBucket.entries()]
     .map(([bucket, v]) => ({ bucket, avgMin: v.count > 0 ? v.sum / v.count : 0 }))
@@ -413,16 +408,6 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
       : "全期間";
   const customStartDefault = params.start ?? "";
   const customEndDefault = params.end ?? "";
-
-  const dailyLegendLabels =
-    dailyView === "difficulty"
-      ? [...new Set(dailyRows.flatMap((row) => row.segments.map((segment) => segment.label)))].sort(compareBucketsAsc)
-      : letterOrder.filter((label) => dailyRows.some((row) => row.segments.some((segment) => segment.label === label)));
-
-  const weeklyLegendLabels =
-    weeklyView === "difficulty"
-      ? [...new Set(weeklyRows.flatMap((row) => row.segments.map((segment) => segment.label)))].sort(compareBucketsAsc)
-      : letterOrder.filter((label) => weeklyRows.some((row) => row.segments.some((segment) => segment.label === label)));
 
   const buildExploreHref = (overrides: Record<string, string | undefined>) => {
     const search = new URLSearchParams();
@@ -565,141 +550,26 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
         <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">現在の表示範囲: {rangeLabel}</p>
       </section>
 
-      <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 text-lg font-semibold">日別の解いた問題数</h2>
-        <div className="mb-3 flex flex-wrap gap-2 text-sm">
-          <Link
-            href={buildExploreHref({ dailyView: "difficulty" })}
-            className={`rounded-md px-3 py-1 ${
-              dailyView === "difficulty"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            difficulty
-          </Link>
-          <Link
-            href={buildExploreHref({ dailyView: "letter" })}
-            className={`rounded-md px-3 py-1 ${
-              dailyView === "letter"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            問題番号（A/B...）
-          </Link>
-        </div>
-        {selectedAtcoderUserId.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーを選択してください。</p>
-        ) : fetchError ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーの取得に失敗しました。</p>
-        ) : dailyRows.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">日別データがありません。</p>
-        ) : (
-          <div className="space-y-2">
-            {dailyRows.slice(-30).map((row) => (
-              <div key={row.date} className="grid grid-cols-[96px_1fr_40px] items-center gap-3 text-sm">
-                <span>{row.date.slice(5)}</span>
-                <div className="h-3 rounded bg-zinc-100 dark:bg-zinc-800">
-                  <div className="flex h-3 overflow-hidden rounded" style={{ width: `${(row.count / maxDaily) * 100}%` }}>
-                    {row.segments.map((segment) => (
-                      <div
-                        key={`${row.date}-${segment.label}`}
-                        style={{
-                          width: `${(segment.count / row.count) * 100}%`,
-                          backgroundColor: segment.color,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <span className="text-right">{row.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-300">
-          {dailyLegendLabels.map((label) => (
-            <span key={label} className="inline-flex items-center gap-1">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{
-                  backgroundColor: dailyView === "difficulty" ? difficultyColorByBucket(label) : letterColor(label),
-                }}
-              />
-              {label}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 text-lg font-semibold">週ごとの解いた問題数</h2>
-        <div className="mb-3 flex flex-wrap gap-2 text-sm">
-          <Link
-            href={buildExploreHref({ weeklyView: "difficulty" })}
-            className={`rounded-md px-3 py-1 ${
-              weeklyView === "difficulty"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            difficulty
-          </Link>
-          <Link
-            href={buildExploreHref({ weeklyView: "letter" })}
-            className={`rounded-md px-3 py-1 ${
-              weeklyView === "letter"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            }`}
-          >
-            問題番号（A/B...）
-          </Link>
-        </div>
-        {selectedAtcoderUserId.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーを選択してください。</p>
-        ) : fetchError ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">ユーザーの取得に失敗しました。</p>
-        ) : weeklyRows.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">週次データがありません。</p>
-        ) : (
-          <div className="space-y-2">
-            {weeklyRows.map((row) => (
-              <div key={row.weekStart} className="grid grid-cols-[120px_1fr_40px] items-center gap-3 text-sm">
-                <span>{row.weekStart}</span>
-                <div className="h-3 rounded bg-zinc-100 dark:bg-zinc-800">
-                  <div className="flex h-3 overflow-hidden rounded" style={{ width: `${(row.count / maxWeekly) * 100}%` }}>
-                    {row.segments.map((segment) => (
-                      <div
-                        key={`${row.weekStart}-${segment.label}`}
-                        style={{
-                          width: `${(segment.count / row.count) * 100}%`,
-                          backgroundColor: segment.color,
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <span className="text-right">{row.count}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-300">
-          {weeklyLegendLabels.map((label) => (
-            <span key={label} className="inline-flex items-center gap-1">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{
-                  backgroundColor: weeklyView === "difficulty" ? difficultyColorByBucket(label) : letterColor(label),
-                }}
-              />
-              {label}
-            </span>
-          ))}
-        </div>
-      </section>
+      <TabbedCountCharts
+        dailyRows={dailyRows}
+        weeklyRows={weeklyRows}
+        initialDailyView={dailyView}
+        initialWeeklyView={weeklyView}
+        dailyEmptyMessage={
+          selectedAtcoderUserId.length === 0
+            ? "ユーザーを選択してください。"
+            : fetchError
+              ? "ユーザーの取得に失敗しました。"
+              : "日別データがありません。"
+        }
+        weeklyEmptyMessage={
+          selectedAtcoderUserId.length === 0
+            ? "ユーザーを選択してください。"
+            : fetchError
+              ? "ユーザーの取得に失敗しました。"
+              : "週次データがありません。"
+        }
+      />
 
       <section className="mb-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="mb-3 text-lg font-semibold">difficulty帯ごとの解答数</h2>

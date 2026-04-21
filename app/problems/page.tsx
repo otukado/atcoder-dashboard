@@ -2,14 +2,10 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
-import { updateSubmissionMeta } from "@/app/problems/actions";
 import { LastSyncCacheNotice } from "@/components/last-sync-cache-notice";
+import { SubmissionMetaForm } from "@/components/submission-meta-form";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-function fmtDate(epochSecond: number): string {
-  return new Date(epochSecond * 1000).toLocaleString("ja-JP");
-}
 
 const categories = [
   { value: "DURING_CONTEST", label: "コンテスト中" },
@@ -70,13 +66,6 @@ function getTodayJstStartEpoch(): number {
   }).format(new Date());
 
   return dayStartEpoch(todayText) ?? Math.floor(Date.now() / 1000);
-}
-
-function toAtCoderProblemUrl(problemId: string, contestId: string | null): string | null {
-  if (!contestId) {
-    return null;
-  }
-  return `https://atcoder.jp/contests/${contestId}/tasks/${problemId}`;
 }
 
 type ProblemsPageProps = {
@@ -276,63 +265,19 @@ export default async function ProblemsPage({ searchParams }: ProblemsPageProps) 
       ) : (
         <div className="space-y-3">
           {submissions.map((s) => (
-            <form
+            <SubmissionMetaForm
               key={s.id}
-              action={updateSubmissionMeta}
-              className="grid gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-[1.7fr_1fr_1fr_auto] md:items-end"
-            >
-              <div>
-                {toAtCoderProblemUrl(s.problemId, s.problem.contestId) ? (
-                  <a
-                    href={toAtCoderProblemUrl(s.problemId, s.problem.contestId) ?? "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm font-medium text-blue-700 underline dark:text-blue-400"
-                  >
-                    {s.problem.title ?? s.problemId}
-                  </a>
-                ) : (
-                  <p className="text-sm font-medium">{s.problem.title ?? s.problemId}</p>
-                )}
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {s.problemId} / {fmtDate(s.epochSecond)} / 初ACまで提出 {s.attemptsUntilFirstAc ?? "-"}
-                </p>
-                <input type="hidden" name="submissionId" value={s.id} />
-              </div>
-
-              <label className="text-sm">
-                <span className="mb-1 block">分類</span>
-                <select
-                  name="category"
-                  defaultValue={s.category}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                >
-                  {categories.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm">
-                <span className="mb-1 block">学習時間(分)</span>
-                <input
-                  type="number"
-                  min={1}
-                  name="estimatedDurationMin"
-                  defaultValue={s.estimatedDurationSec ? Math.max(1, Math.round(s.estimatedDurationSec / 60)) : ""}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-              >
-                保存
-              </button>
-            </form>
+              submissionId={s.id}
+              title={s.problem.title}
+              problemId={s.problemId}
+              contestId={s.problem.contestId}
+              epochSecond={s.epochSecond}
+              attemptsUntilFirstAc={s.attemptsUntilFirstAc}
+              initialCategory={s.category}
+              initialEstimatedDurationMin={
+                s.estimatedDurationSec ? String(Math.max(1, Math.round(s.estimatedDurationSec / 60))) : ""
+              }
+            />
           ))}
         </div>
       )}

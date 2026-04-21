@@ -3,7 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
-import { syncAtCoderDataForUser } from "@/lib/atcoder-sync";
+import { syncAtCoderDataForUser, waitForSyncLockRelease } from "@/lib/atcoder-sync";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -15,6 +15,13 @@ type DbWithResetModels = {
     deleteMany: (args: unknown) => Promise<unknown>;
   };
 };
+
+function isUnknownArgumentError(error: unknown, argumentName: string): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.includes(`Unknown argument \`${argumentName}\``);
+}
 
 function normalizeAtCoderUserId(value: string): string {
   return value.trim().toLowerCase();
@@ -41,21 +48,38 @@ export async function updateAtCoderUserId(formData: FormData) {
     : null;
   const nextAtCoderUserId = atcoderUserId || null;
   const changed = currentAtCoderUserId !== nextAtCoderUserId;
+  const shouldResetSyncedData = currentAtCoderUserId !== null && changed;
 
-  if (changed) {
+  if (shouldResetSyncedData || (changed && nextAtCoderUserId)) {
+    await waitForSyncLockRelease(session.user.id);
+  }
+
+  if (shouldResetSyncedData) {
     await db.submission.deleteMany({
       where: {
         userId: session.user.id,
       },
     });
 
-    await db.problem.deleteMany({
-      where: {
-        submissions: {
-          none: {},
+    try {
+      await db.problem.deleteMany({
+        where: {
+          userId: session.user.id,
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (!isUnknownArgumentError(error, "userId")) {
+        throw error;
+      }
+
+      await db.problem.deleteMany({
+        where: {
+          submissions: {
+            none: {},
+          },
+        },
+      });
+    }
   }
 
   await prisma.userProfile.upsert({
@@ -67,11 +91,16 @@ export async function updateAtCoderUserId(formData: FormData) {
     },
     update: {
       atcoderUserId: nextAtCoderUserId,
-      ...(changed ? { lastSyncedAt: null } : {}),
+      ...(shouldResetSyncedData ? { lastSyncedAt: null } : {}),
     },
   });
 
+  if (changed && nextAtCoderUserId) {
+    await syncAtCoderDataForUser(session.user.id, nextAtCoderUserId);
+  }
+
   revalidatePath("/dashboard");
+  revalidatePath("/problems");
 }
 
 export async function syncAtCoderData() {
