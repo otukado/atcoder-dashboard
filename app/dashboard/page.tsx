@@ -8,9 +8,10 @@ import { SyncAtCoderButton } from "@/components/sync-atcoder-button";
 import { TabbedCountCharts } from "@/components/tabbed-count-charts";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { formatDateInTimeZone, getDayEndEpoch, getDayStartEpoch, getTodayStartEpoch, getWeekKey } from "@/lib/time-zone";
 
 function toDayKey(epochSecond: number): string {
-  return new Date(epochSecond * 1000).toISOString().slice(0, 10);
+  return formatDateInTimeZone(epochSecond);
 }
 
 function difficultyBucket(difficulty: number | null): string {
@@ -50,43 +51,23 @@ function difficultyColorByBucket(bucket: string): string {
 }
 
 function dayStartEpoch(dateText: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
-    return null;
-  }
-  const date = new Date(`${dateText}T00:00:00+09:00`);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return Math.floor(date.getTime() / 1000);
+  return getDayStartEpoch(dateText);
 }
 
 function dayEndEpoch(dateText: string): number | null {
-  const start = dayStartEpoch(dateText);
-  if (start === null) return null;
-  return start + 86400 - 1;
+  return getDayEndEpoch(dateText);
 }
 
 function formatDate(epochSecond: number): string {
-  return new Date(epochSecond * 1000).toISOString().slice(0, 10);
+  return formatDateInTimeZone(epochSecond);
 }
 
 function getTodayJstStartEpoch(): number {
-  const todayText = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-
-  return dayStartEpoch(todayText) ?? Math.floor(Date.now() / 1000);
+  return getTodayStartEpoch();
 }
 
 function weekKeyJst(epochSecond: number): string {
-  const d = new Date((epochSecond + 9 * 3600) * 1000);
-  const day = d.getUTCDay();
-  const mondayOffset = (day + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - mondayOffset);
-  return d.toISOString().slice(0, 10);
+  return getWeekKey(epochSecond);
 }
 
 function problemLetter(problemId: string): string {

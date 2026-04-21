@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { getAppTimeZone } from "@/lib/time-zone";
+
 type CachedSyncResult = {
   fetchedSubmissions: number;
   syncedAcceptedSubmissions: number;
@@ -49,7 +51,15 @@ export function LastSyncCacheNotice() {
   }
 
   const syncedAtText = cached.syncedAt
-    ? new Date(cached.syncedAt).toLocaleString("ja-JP")
+    ? new Intl.DateTimeFormat("ja-JP", {
+        timeZone: getAppTimeZone(),
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(new Date(cached.syncedAt))
     : "時刻不明";
 
   return (

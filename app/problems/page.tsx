@@ -6,6 +6,7 @@ import { LastSyncCacheNotice } from "@/components/last-sync-cache-notice";
 import { SubmissionMetaForm } from "@/components/submission-meta-form";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getDayEndEpoch, getDayStartEpoch, getTodayStartEpoch } from "@/lib/time-zone";
 
 const categories = [
   { value: "DURING_CONTEST", label: "コンテスト中" },
@@ -41,31 +42,15 @@ type DbWithSubmissionFindMany = {
 };
 
 function dayStartEpoch(dateText: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
-    return null;
-  }
-  const date = new Date(`${dateText}T00:00:00+09:00`);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return Math.floor(date.getTime() / 1000);
+  return getDayStartEpoch(dateText);
 }
 
 function dayEndEpoch(dateText: string): number | null {
-  const start = dayStartEpoch(dateText);
-  if (start === null) return null;
-  return start + 86400 - 1;
+  return getDayEndEpoch(dateText);
 }
 
 function getTodayJstStartEpoch(): number {
-  const todayText = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-
-  return dayStartEpoch(todayText) ?? Math.floor(Date.now() / 1000);
+  return getTodayStartEpoch();
 }
 
 type ProblemsPageProps = {
