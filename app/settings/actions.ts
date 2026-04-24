@@ -3,7 +3,10 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
-import { syncAtCoderDataForUser, waitForSyncLockRelease } from "@/lib/atcoder-sync";
+import {
+  syncAtCoderDataForUser,
+  waitForSyncLockRelease,
+} from "@/lib/atcoder-sync";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 

@@ -4,7 +4,11 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { syncAtCoderDataForUser } from "@/lib/atcoder-sync";
 import { prisma } from "@/lib/prisma";
-import { clearSyncProgress, getSyncProgress, setSyncProgress } from "@/lib/sync-progress";
+import {
+  clearSyncProgress,
+  getSyncProgress,
+  setSyncProgress,
+} from "@/lib/sync-progress";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -20,7 +24,10 @@ export async function POST() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json({ message: "認証が必要です。" }, { status: 401 });
+      return NextResponse.json(
+        { message: "認証が必要です。" },
+        { status: 401 },
+      );
     }
 
     const profile = await prisma.userProfile.findUnique({
@@ -72,7 +79,8 @@ export async function POST() {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "同期に失敗しました。";
+    const message =
+      error instanceof Error ? error.message : "同期に失敗しました。";
     const session = await getServerSession(authOptions);
     if (session?.user?.id) {
       setSyncProgress(session.user.id, {

@@ -31,7 +31,9 @@ type DbWithSolveModels = {
   };
   userProfile: {
     upsert: (args: unknown) => Promise<unknown>;
-    findUnique: (args: unknown) => Promise<{ atcoderUserId: string | null } | null>;
+    findUnique: (
+      args: unknown,
+    ) => Promise<{ atcoderUserId: string | null } | null>;
   };
 };
 
@@ -77,7 +79,8 @@ async function loadProblemResources(): Promise<ProblemResources> {
   if (
     g.__atcoderProblemResourcesCache?.value &&
     g.__atcoderProblemResourcesCache.fetchedAt &&
-    now - g.__atcoderProblemResourcesCache.fetchedAt < PROBLEM_RESOURCES_CACHE_TTL_MS
+    now - g.__atcoderProblemResourcesCache.fetchedAt <
+      PROBLEM_RESOURCES_CACHE_TTL_MS
   ) {
     return g.__atcoderProblemResourcesCache.value;
   }

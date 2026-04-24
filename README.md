@@ -55,6 +55,21 @@ npx prisma migrate dev
 
 Neon を使う場合は、`DATABASE_URL` を Neon の Postgres 接続文字列にしてください。
 
+### 2.1 本番デプロイ時のマイグレーション（Vercel/CI）
+
+- Vercel では [web/vercel.json](vercel.json) の `buildCommand` により、デプロイ時に自動で次を実行します。
+
+```bash
+pnpm run build:with-migrate
+```
+
+- 実行内容:
+	1. `prisma generate`
+	2. `prisma migrate deploy`
+	3. `next build`
+
+これにより、Neon の本番DBへマイグレーションが反映されたうえでビルドされます。
+
 ### 3. 使い方
 1. `/login` でログイン
 2. `/dashboard` で AtCoder ID を保存

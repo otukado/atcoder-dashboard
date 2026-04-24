@@ -1,6 +1,8 @@
 const DEFAULT_TIME_ZONE = "Asia/Tokyo";
 
-function parseDateText(dateText: string): { year: number; month: number; day: number } | null {
+function parseDateText(
+  dateText: string,
+): { year: number; month: number; day: number } | null {
   const match = dateText.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) {
     return null;
@@ -16,7 +18,10 @@ function parseDateText(dateText: string): { year: number; month: number; day: nu
   return { year, month, day };
 }
 
-function getDateTimeParts(date: Date, timeZone: string): {
+function getDateTimeParts(
+  date: Date,
+  timeZone: string,
+): {
   year: number;
   month: number;
   day: number;
@@ -69,7 +74,10 @@ export function getAppTimeZone(): string {
   return process.env.NEXT_PUBLIC_APP_TIME_ZONE?.trim() || DEFAULT_TIME_ZONE;
 }
 
-export function formatDateInTimeZone(epochSecond: number, timeZone = getAppTimeZone()): string {
+export function formatDateInTimeZone(
+  epochSecond: number,
+  timeZone = getAppTimeZone(),
+): string {
   const parts = getDateTimeParts(new Date(epochSecond * 1000), timeZone);
   const year = String(parts.year).padStart(4, "0");
   const month = String(parts.month).padStart(2, "0");
@@ -77,13 +85,24 @@ export function formatDateInTimeZone(epochSecond: number, timeZone = getAppTimeZ
   return `${year}-${month}-${day}`;
 }
 
-export function getDayStartEpoch(dateText: string, timeZone = getAppTimeZone()): number | null {
+export function getDayStartEpoch(
+  dateText: string,
+  timeZone = getAppTimeZone(),
+): number | null {
   const parts = parseDateText(dateText);
   if (!parts) {
     return null;
   }
 
-  const targetUtcLike = Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0, 0);
+  const targetUtcLike = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    0,
+    0,
+    0,
+    0,
+  );
   let epochMs = targetUtcLike;
 
   for (let i = 0; i < 3; i += 1) {
@@ -98,7 +117,10 @@ export function getDayStartEpoch(dateText: string, timeZone = getAppTimeZone()):
   return Math.floor(epochMs / 1000);
 }
 
-export function getDayEndEpoch(dateText: string, timeZone = getAppTimeZone()): number | null {
+export function getDayEndEpoch(
+  dateText: string,
+  timeZone = getAppTimeZone(),
+): number | null {
   const start = getDayStartEpoch(dateText, timeZone);
   if (start === null) {
     return null;
@@ -112,7 +134,10 @@ export function getTodayStartEpoch(timeZone = getAppTimeZone()): number {
   return getDayStartEpoch(todayText, timeZone) ?? Math.floor(Date.now() / 1000);
 }
 
-export function getWeekKey(epochSecond: number, timeZone = getAppTimeZone()): string {
+export function getWeekKey(
+  epochSecond: number,
+  timeZone = getAppTimeZone(),
+): string {
   const parts = getDateTimeParts(new Date(epochSecond * 1000), timeZone);
   const utcDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   const dayOfWeek = utcDate.getUTCDay();

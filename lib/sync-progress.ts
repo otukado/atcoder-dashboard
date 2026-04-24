@@ -1,4 +1,10 @@
-type SyncPhase = "idle" | "fetching" | "saving-problems" | "saving-submissions" | "done" | "error";
+type SyncPhase =
+  | "idle"
+  | "fetching"
+  | "saving-problems"
+  | "saving-submissions"
+  | "done"
+  | "error";
 
 export type SyncProgressState = {
   phase: SyncPhase;
@@ -23,7 +29,10 @@ function getProgressMap(): Map<string, SyncProgressState> {
   return g.__atcoderSyncProgressMap;
 }
 
-export function setSyncProgress(userId: string, next: Omit<SyncProgressState, "updatedAt">) {
+export function setSyncProgress(
+  userId: string,
+  next: Omit<SyncProgressState, "updatedAt">,
+) {
   getProgressMap().set(userId, {
     ...next,
     updatedAt: Date.now(),
